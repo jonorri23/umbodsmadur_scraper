@@ -6,7 +6,7 @@ A robust, high-performance async web scraper for the [Icelandic Parliamentary Om
 - **Fast**: Uses `httpx` and `asyncio` for concurrent scraping.
 - **Robust**: Handles network errors and retries gracefully.
 - **Simple**: Zero browser dependencies (no Selenium/Playwright required).
-- **Output**: Clean, structured JSON with metadata, abstract, and indexed content.
+- **Output**: Clean, structured JSON.
 
 ## Prerequisites
 - Python 3.8+
@@ -25,7 +25,7 @@ A robust, high-performance async web scraper for the [Icelandic Parliamentary Om
 
 ## Usage
 
-Run the scraper with default settings (scans backwards from ID 11150):
+Run the scraper with default settings:
 ```bash
 python scraper.py
 ```
