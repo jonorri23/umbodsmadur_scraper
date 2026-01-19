@@ -1,4 +1,4 @@
-# Umboðsmaður Alþingis Scraper
+# Umboðsmaður Alþingis Scraper (Standard)
 
 A robust, high-performance async web scraper for the [Icelandic Parliamentary Ombudsman](https://www.umbodsmadur.is) website.
 
@@ -6,26 +6,24 @@ A robust, high-performance async web scraper for the [Icelandic Parliamentary Om
 - **Fast**: Uses `httpx` and `asyncio` for concurrent scraping.
 - **Robust**: Handles network errors and retries gracefully.
 - **Simple**: Zero browser dependencies (no Selenium/Playwright required).
-- **Output**: Clean, structured JSON.
+- **Compliant**: Outputs JSON strictly adhering to assignment schema.
 
 ## Prerequisites
 - Python 3.8+
 
 ## Setup
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/jonorri23/umbodsmadur_scraper.git
-   cd umbodsmadur_scraper
-   ```
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Install dependencies
+pip install -r requirements.txt
+```
 
 ## Usage
 
-Run the scraper with default settings:
+Run the scraper to fetch cases (defaults to recent ones):
 ```bash
 python scraper.py
 ```
@@ -44,7 +42,7 @@ python scraper.py --start-id 12000 --count 50
 ```
 
 ## Output Format
-The scraper generates a JSON file containing an array of case objects:
+The scraper generates a JSON file (`output/cases.json`) strictly following the assignment schema:
 ```json
 [
   {

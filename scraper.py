@@ -140,14 +140,11 @@ class Scraper:
                     full_text = f"{formatted_title}\n\n{abstract}\n\n" + "\n".join(p['paragraphText'] for p in content_list)
 
                     case_data = {
-                        "case_number": case_number,
-                        "year": year,
                         "title": formatted_title,
+                        "originalUrl": url,
                         "type": case_type,
-                        "original_url": url,
                         "abstract": abstract.strip(),
-                        "content": content_list,
-                        "full_text": full_text
+                        "content": content_list
                     }
                     
                     progress.advance(task_id)
