@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Umboðsmaður Alþingis Cases</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-4xl font-bold mb-8 text-gray-800">Umboðsmaður Alþingis Cases</h1>
+
+        <div class="mb-6 flex gap-4">
+            <input type="text" id="searchInput" placeholder="Search cases..."
+                class="flex-1 p-3 rounded-lg border border-gray-300 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            <button onclick="searchCases()"
+                class="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition">
+                Search
+            </button>
+        </div>
+
+        <div id="casesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Cases will be injected here -->
+        </div>
+
+        <div id="loading" class="text-center py-10 hidden">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        </div>
+    </div>
+
+    <!-- Case Card Template -->
+    <template id="caseTemplate">
+        <div class="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition cursor-pointer">
+            <div class="flex justify-between items-start mb-4">
+                <span
+                    class="type-badge px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold uppercase tracking-wide">Type</span>
+                <span class="text-gray-500 text-sm date">Year</span>
+            </div>
+            <h3 class="text-xl font-bold mb-3 text-gray-900 title line-clamp-2">Title</h3>
+            <p class="text-gray-600 mb-4 text-sm abstract line-clamp-3">Abstract</p>
+            <a href="#" target="_blank"
+                class="link text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center">
+                Read on website &rarr;
+            </a>
+        </div>
+    </template>
+
+    <script>
+        const SUPABASE_URL = 'https://bvxgxpququhxrnrzcjcb.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eGd4cHF1cXVoeHJucnpjamNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MjYyNzUsImV4cCI6MjA4NDQwMjI3NX0.3tIBAVfhBz2_ZiwRP5D_rcUKjibcKMrW9OkA_QBNzsM';
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function fetchCases(query = '') {
+            const grid = document.getElementById('casesGrid');
+            const loader = document.getElementById('loading');
+            grid.innerHTML = '';
+            loader.classList.remove('hidden');
+
+            let queryBuilder = supabase
+                .from('cases')
+                .select('*')
+                .order('year', { ascending: false })
+                .order('case_number', { ascending: false })
+                .limit(50);
+
+            if (query) {
+                queryBuilder = queryBuilder.textSearch('fts', query);
+            }
+
+            const { data, error } = await queryBuilder;
+
+            loader.classList.add('hidden');
+
+            if (error) {
+                console.error('Error fetching cases:', error);
+                grid.innerHTML = '<p class="text-red-500 col-span-3 text-center">Failed to load cases.</p>';
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                grid.innerHTML = '<p class="text-gray-500 col-span-3 text-center">No cases found.</p>';
+                return;
+            }
+
+            const template = document.getElementById('caseTemplate');
+
+            data.forEach(item => {
+                const clone = template.content.cloneNode(true);
+                clone.querySelector('.title').textContent = item.title;
+                clone.querySelector('.type-badge').textContent = item.type || 'Case';
+                clone.querySelector('.date').textContent = item.year || '';
+                clone.querySelector('.abstract').textContent = item.abstract || '';
+                clone.querySelector('.link').href = item.original_url;
+
+                grid.appendChild(clone);
+            });
+        }
+
+        async function searchCases() {
+            const query = document.getElementById('searchInput').value;
+            await fetchCases(query);
+        }
+
+        // Handle Enter key in search
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchCases();
+        });
+
+        // Initial load
+        fetchCases();
+    </script>
+</body>
+
+</html>
