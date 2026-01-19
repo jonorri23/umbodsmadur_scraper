@@ -8,6 +8,7 @@ import asyncio
 import json
 import re
 import argparse
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -15,6 +16,11 @@ import httpx
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
+from supabase import create_client, Client
+
+# --- Supabase Configuration ---
+SUPABASE_URL = "https://bvxgxpququhxrnrzcjcb.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eGd4cHF1cXVoeHJucnpjamNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MjYyNzUsImV4cCI6MjA4NDQwMjI3NX0.3tIBAVfhBz2_ZiwRP5D_rcUKjibcKMrW9OkA_QBNzsM"
 
 # Configuration
 BASE_URL = "https://www.umbodsmadur.is/alit-og-bref/mal/nr/{id}/skoda/mal/"
@@ -31,10 +37,12 @@ class Scraper:
         self.output_file = output_file
         self.results: List[Dict[str, Any]] = []
         self.client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=10.0, # Changed from 30.0
             follow_redirects=True,
             headers={"User-Agent": "Umbodsmadur Scraper/1.0"}
         )
+        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        self.console = Console()
         self.semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
     async def close(self):
@@ -130,16 +138,26 @@ class Scraper:
                                 idx += 1
                                 
                     # Structure Output
-                    item = {
+                    # Extract case_number and year from id_year (e.g., "F143/2023")
+                    case_number_match = re.match(r'(.+)/(\d{4})', id_year)
+                    case_number = case_number_match.group(1) if case_number_match else id_year
+                    year = int(case_number_match.group(2)) if case_number_match else None
+
+                    full_text = f"{formatted_title}\n\n{abstract}\n\n" + "\n".join(p['paragraphText'] for p in content_list)
+
+                    case_data = {
+                        "case_number": case_number,
+                        "year": year,
                         "title": formatted_title,
-                        "originalUrl": url,
                         "type": case_type,
-                        "abstract": abstract,
-                        "content": content_list
+                        "original_url": url,
+                        "abstract": abstract.strip(),
+                        "content": content_list,
+                        "full_text": full_text
                     }
                     
                     progress.advance(task_id)
-                    return item
+                    return case_data
 
                 except Exception as e:
                     if attempt == MAX_RETRIES - 1:
@@ -148,15 +166,29 @@ class Scraper:
             
             return None
 
-    async def run(self):
-        # Determine range (User wanted ~20 cases for testing)
-        # We start from start_id and go DOWN.
-        # Ideally we want valid cases. 
+    async def save_to_supabase(self, cases: List[Dict]):
+        if not cases:
+            return
         
-        # We process in batches to allow progress updates
-        BATCH_SIZE = 50
+        try:
+            # Prepare data for Supabase (matching schema keys)
+            # Our case_data keys already match the SQL schema columns
+            response = self.supabase.table("cases").upsert(cases, on_conflict="case_number").execute()
+            self.console.print(f"[green]Successfully synced {len(cases)} cases to Supabase.[/green]")
+        except Exception as e:
+            self.console.print(f"[bold red]Supabase Sync Error:[/bold red] {e}")
+
+    async def run(self):
+        """Main execution loop."""
+        self.console.print(f"[bold blue]Starting scraper from ID {self.start_id} looking for {self.count} cases...[/bold blue]")
+
+        found_cases = []
+        # Create a range of IDs to scan. 
+        # We'll generate batches of IDs to scan in parallel.
+        # We allow scanning significantly more IDs than 'count' because of gaps.
+        
+        # Generator for IDs downwards
         current_id = self.start_id
-        valid_cases_found = 0
         
         with Progress(
             SpinnerColumn(),
@@ -166,35 +198,43 @@ class Scraper:
         ) as progress:
             task = progress.add_task("[cyan]Scraping cases...", total=None)
             
-            while valid_cases_found < self.count:
-                # Create batch of tasks
-                tasks = []
+            while len(found_cases) < self.count:
+                # Create a batch of IDs
                 # Simple strategy: try next N IDs downwards
+                BATCH_SIZE = 50 # Using the existing BATCH_SIZE from original code
                 ids_to_try = range(current_id, current_id - BATCH_SIZE, -1)
                 current_id -= BATCH_SIZE
                 
                 if current_id < 0:
                     break
 
-                for i in ids_to_try:
-                    tasks.append(self.scrape_id(i, progress, task))
+                # Create tasks
+                tasks = [self.scrape_id(cid, progress, task) for cid in ids_to_try]
+                results = await asyncio.gather(*tasks)
                 
-                batch_results = await asyncio.gather(*tasks)
+                # Filter valid results
+                valid_results = [r for r in results if r is not None]
                 
-                for res in batch_results:
-                    if res:
-                        self.results.append(res)
-                        valid_cases_found += 1
-                        
-                if valid_cases_found >= self.count:
+                if valid_results:
+                    found_cases.extend(valid_results)
+                    progress.update(task, completed=len(found_cases))
+                    
+                    # Sync batch to Supabase immediately (optional, but good for progress)
+                    await self.save_to_supabase(valid_results)
+
+                # Safety break if we go too far back (just to prevent infinite loops in dev)
+                if current_id < 0:
                     break
 
-        # Save results
+        # Trim to requested count
+        found_cases = found_cases[:self.count]
+        
+        # Save to JSON
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         with open(self.output_file, "w", encoding="utf-8") as f:
-            json.dump(self.results, f, indent=2, ensure_ascii=False)
+            json.dump(found_cases, f, ensure_ascii=False, indent=2)
             
-        console.print(f"[green]✅ Successfully scraped {len(self.results)} cases to {self.output_file}[/green]")
+        self.console.print(f"[bold green]Done! Found {len(found_cases)} cases. Saved to {self.output_file}[/bold green]")
 
 async def main():
     parser = argparse.ArgumentParser(description="Clean Async Scraper")
