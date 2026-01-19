@@ -16,11 +16,6 @@ import httpx
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
-from supabase import create_client, Client
-
-# --- Supabase Configuration ---
-SUPABASE_URL = "https://bvxgxpququhxrnrzcjcb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eGd4cHF1cXVoeHJucnpjamNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MjYyNzUsImV4cCI6MjA4NDQwMjI3NX0.3tIBAVfhBz2_ZiwRP5D_rcUKjibcKMrW9OkA_QBNzsM"
 
 # Configuration
 BASE_URL = "https://www.umbodsmadur.is/alit-og-bref/mal/nr/{id}/skoda/mal/"
@@ -41,7 +36,6 @@ class Scraper:
             follow_redirects=True,
             headers={"User-Agent": "Umbodsmadur Scraper/1.0"}
         )
-        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         self.console = Console()
         self.semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
@@ -166,16 +160,6 @@ class Scraper:
             
             return None
 
-    async def save_to_supabase(self, cases: List[Dict]):
-        if not cases:
-            return
-        
-        try:
-            # Prepare data for Supabase (matching schema keys)
-            # Our case_data keys already match the SQL schema columns
-            response = self.supabase.table("cases").upsert(cases, on_conflict="case_number").execute()
-            self.console.print(f"[green]Successfully synced {len(cases)} cases to Supabase.[/green]")
-        except Exception as e:
             self.console.print(f"[bold red]Supabase Sync Error:[/bold red] {e}")
 
     async def run(self):
@@ -219,9 +203,6 @@ class Scraper:
                     found_cases.extend(valid_results)
                     progress.update(task, completed=len(found_cases))
                     
-                    # Sync batch to Supabase immediately (optional, but good for progress)
-                    await self.save_to_supabase(valid_results)
-
                 # Safety break if we go too far back (just to prevent infinite loops in dev)
                 if current_id < 0:
                     break
